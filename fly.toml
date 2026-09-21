@@ -36,18 +36,22 @@ primary_region = "yyz"
   force_https = true
   processes = ["app"]
 
-  # One machine, and it stays up.
+  # Scale to zero when idle: Fly stops the machine after a quiet period and starts
+  # it again on the next request.
   #
-  # Scale-to-zero is wrong for this service on two counts: a suspended machine
-  # drops in-flight SSE connections mid-stream, and a cold start pays the full
-  # LangChain/LangGraph import cost before the first token. Staying at one
-  # machine also sidesteps the question of whether the design is
-  # multi-instance-safe, which has not been proven — slowapi's rate limiter keeps
-  # its counters in process memory, so N machines would mean N independent
-  # limits. Raising min_machines_running above 1 needs that resolved first.
-  auto_stop_machines = "off"
+  # Two costs come with that, both accepted deliberately. A stopped machine drops
+  # any in-flight SSE connection, so a stream running when the idle timer fires
+  # ends mid-reply. And the next request pays a cold start — measured at roughly
+  # ten seconds from machine start to the health check passing, since startup
+  # imports the agent stack and warms the model provider before serving.
+  #
+  # `min_machines_running` is a floor, not a ceiling, and the ceiling still has to
+  # stay at one: the design is not proven multi-instance-safe, because slowapi's
+  # rate limiter keeps its counters in process memory, so N machines would mean N
+  # independent limits. Scale out only once that is resolved.
+  auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
 
   [http_service.concurrency]
     # SSE connections are long-lived, so the limit is about concurrent streams
